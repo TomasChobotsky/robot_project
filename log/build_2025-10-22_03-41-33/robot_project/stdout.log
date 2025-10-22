@@ -1,0 +1,39 @@
+running develop
+Removing /home/rocotics/ros2_ws/src/robot_project/install/robot_project/lib/python3.8/site-packages/robot-project.egg-link (link to .)
+running egg_info
+writing build/robot_project/robot_project.egg-info/PKG-INFO
+writing dependency_links to build/robot_project/robot_project.egg-info/dependency_links.txt
+writing entry points to build/robot_project/robot_project.egg-info/entry_points.txt
+writing requirements to build/robot_project/robot_project.egg-info/requires.txt
+writing top-level names to build/robot_project/robot_project.egg-info/top_level.txt
+reading manifest file 'build/robot_project/robot_project.egg-info/SOURCES.txt'
+writing manifest file 'build/robot_project/robot_project.egg-info/SOURCES.txt'
+running build
+running build_py
+creating /home/rocotics/ros2_ws/src/robot_project/build/robot_project/build
+creating /home/rocotics/ros2_ws/src/robot_project/build/robot_project/build/lib
+creating /home/rocotics/ros2_ws/src/robot_project/build/robot_project/build/lib/robot_project
+copying robot_project/send_single_joint_command.py -> /home/rocotics/ros2_ws/src/robot_project/build/robot_project/build/lib/robot_project
+copying robot_project/img_processor.py -> /home/rocotics/ros2_ws/src/robot_project/build/robot_project/build/lib/robot_project
+copying robot_project/__init__.py -> /home/rocotics/ros2_ws/src/robot_project/build/robot_project/build/lib/robot_project
+running install
+running install_lib
+creating /home/rocotics/ros2_ws/src/robot_project/install/robot_project/lib/python3.8/site-packages/robot_project
+copying /home/rocotics/ros2_ws/src/robot_project/build/robot_project/build/lib/robot_project/send_single_joint_command.py -> /home/rocotics/ros2_ws/src/robot_project/install/robot_project/lib/python3.8/site-packages/robot_project
+copying /home/rocotics/ros2_ws/src/robot_project/build/robot_project/build/lib/robot_project/img_processor.py -> /home/rocotics/ros2_ws/src/robot_project/install/robot_project/lib/python3.8/site-packages/robot_project
+copying /home/rocotics/ros2_ws/src/robot_project/build/robot_project/build/lib/robot_project/__init__.py -> /home/rocotics/ros2_ws/src/robot_project/install/robot_project/lib/python3.8/site-packages/robot_project
+byte-compiling /home/rocotics/ros2_ws/src/robot_project/install/robot_project/lib/python3.8/site-packages/robot_project/send_single_joint_command.py to send_single_joint_command.cpython-38.pyc
+byte-compiling /home/rocotics/ros2_ws/src/robot_project/install/robot_project/lib/python3.8/site-packages/robot_project/img_processor.py to img_processor.cpython-38.pyc
+byte-compiling /home/rocotics/ros2_ws/src/robot_project/install/robot_project/lib/python3.8/site-packages/robot_project/__init__.py to __init__.cpython-38.pyc
+running install_data
+creating /home/rocotics/ros2_ws/src/robot_project/install/robot_project/share/robot_project/launch
+copying launch/robot_arm.launch.py -> /home/rocotics/ros2_ws/src/robot_project/install/robot_project/share/robot_project/launch
+creating /home/rocotics/ros2_ws/src/robot_project/install/robot_project/share/robot_project/urdf
+copying urdf/robot_arm.xacro -> /home/rocotics/ros2_ws/src/robot_project/install/robot_project/share/robot_project/urdf
+creating /home/rocotics/ros2_ws/src/robot_project/install/robot_project/share/robot_project/config
+copying config/gazebo_config.yaml -> /home/rocotics/ros2_ws/src/robot_project/install/robot_project/share/robot_project/config
+running install_egg_info
+Copying build/robot_project/robot_project.egg-info to /home/rocotics/ros2_ws/src/robot_project/install/robot_project/lib/python3.8/site-packages/robot_project-0.0.0-py3.8.egg-info
+running install_scripts
+Installing img_processor script to /home/rocotics/ros2_ws/src/robot_project/install/robot_project/lib/robot_project
+writing list of installed files to '/home/rocotics/ros2_ws/src/robot_project/build/robot_project/install.log'

@@ -1,0 +1,17 @@
+digraph G {
+node [shape=box];
+"base" [label="base"];
+"shoulder" [label="shoulder"];
+"elbow" [label="elbow"];
+"wrist" [label="wrist"];
+"grabber" [label="grabber"];
+node [shape=ellipse, color=blue, fontcolor=blue];
+"base" -> "base_shoulder" [label="xyz: 0 0 0 \nrpy: 0 -0 0"]
+"base_shoulder" -> "shoulder"
+"shoulder" -> "shoulder_elbow" [label="xyz: 0 0 0 \nrpy: 0 -0 0"]
+"shoulder_elbow" -> "elbow"
+"elbow" -> "elbow_wrist" [label="xyz: 0 0 0 \nrpy: 0 -0 0"]
+"elbow_wrist" -> "wrist"
+"wrist" -> "wrist_grabber" [label="xyz: 0 0 0 \nrpy: 0 -0 0"]
+"wrist_grabber" -> "grabber"
+}
