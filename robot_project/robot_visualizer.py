@@ -7,16 +7,16 @@ from adatools import config_generator as cg
 from adatools import plotting_tools as pt
 from adatools import utils as utils
 
-from std_msgs.msg import Int32
+from std_msgs.msg import Int32MultiArray
 
 
 class myDynamixelVisualizer(Node):
     def __init__(self) -> None:
         super().__init__("robot_visualizer")
-        self.pub = self.create_publisher(Int32, 'dxl_joint_cmd', 10)
+        self.pub = self.create_publisher(Int32MultiArray, 'dxl_joint_cmd', 10)
         self.create_config()
         self.create_visualizer()
-        self.create_timer(0.5, self.timer_callback)
+        self.create_timer(0.25, self.timer_callback)
 
         print("Created")
 
@@ -31,12 +31,11 @@ class myDynamixelVisualizer(Node):
         self.plot = pt.plot_baseplate(self.robot_teach)
 
     def timer_callback(self):
-        msg = Int32()
-        msg.data = utils.rad2steps(self.my_conf_robot.q[0])
+        msg = Int32MultiArray()
+        msg.data = [utils.rad2steps(self.my_conf_robot.q[0]), utils.rad2steps(self.my_conf_robot.q[1])]
         self.pub.publish(msg)
         self.get_logger().info('Publishing: "%s"' % msg.data)
         self.plot.step()
-        print('Publishing: "%s"' % msg.data)
     
 def main(args=None):
     rclpy.init(args=args)
