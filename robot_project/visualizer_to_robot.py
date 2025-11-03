@@ -25,7 +25,7 @@ class visualizerToRobot(Node):
         msg = Int32MultiArray()
         msg.data = self.received_data
         self.pub.publish(msg)
-        self.get_logger().info('Publishing: "%s"' % msg.data)
+        #self.get_logger().info('Publishing: "%s"' % msg.data)
 
 def main(args=None):
     rclpy.init(args=args)

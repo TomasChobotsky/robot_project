@@ -12,19 +12,15 @@ class BallTrackingController(Node):
     def __init__(self):
         super().__init__("ball_tracking_controller")
         
-        # Subscribers for ball positions
         self.green_ball_sub = self.create_subscription(
             PointStamped, 'green_ball_position', self.green_ball_callback, 10)
         self.orange_ball_sub = self.create_subscription(
             PointStamped, 'orange_ball_position', self.orange_ball_callback, 10)
         
-        # Publisher for joint commands
         self.joint_cmd_pub = self.create_publisher(Int32MultiArray, 'dxl_joint_cmd', 10)
         
-        # Publisher for target selection
         self.target_pub = self.create_publisher(String, 'current_target', 10)
         
-        # Robot configuration (same as your visualizer)
         self.my_conf_robot = cg.get_robot_config_1(
             link1=0.145, link1_offset=0.0,
             link2=0.350, link2_offset=0.0,
@@ -32,20 +28,17 @@ class BallTrackingController(Node):
             link4=0.100, link4_offset=0.0
         )
         
-        # Storage for ball positions
         self.green_ball_pos = None
         self.orange_ball_pos = None
         
         # Target selection: 'green', 'orange', 'alternate', or 'closest'
-        self.declare_parameter('target_mode', 'green')
+        self.declare_parameter('target_mode', 'closest')
         self.target_mode = self.get_parameter('target_mode').value
         
         # Camera to robot base transform
-        # YOU NEED TO CALIBRATE THESE VALUES!
-        # These are example values - adjust based on your camera mounting
-        self.declare_parameter('camera_x_offset', 0.2)  # meters
+        self.declare_parameter('camera_x_offset', 0.0)  # meters
         self.declare_parameter('camera_y_offset', 0.0)  # meters
-        self.declare_parameter('camera_z_offset', 0.3)  # meters
+        self.declare_parameter('camera_z_offset', 0.0)  # meters
         self.declare_parameter('camera_rotation', 0.0)  # degrees around Z
         
         self.cam_x = self.get_parameter('camera_x_offset').value
@@ -53,7 +46,7 @@ class BallTrackingController(Node):
         self.cam_z = self.get_parameter('camera_z_offset').value
         self.cam_rot = self.get_parameter('camera_rotation').value
         
-        # Safe workspace limits (adjust for your robot)
+        # Safe workspace limits
         self.workspace_x_min = 0.1
         self.workspace_x_max = 0.7
         self.workspace_y_min = -0.4
@@ -81,14 +74,24 @@ class BallTrackingController(Node):
         self.get_logger().info(f"Camera offset: x={self.cam_x}, y={self.cam_y}, z={self.cam_z}")
     
     def green_ball_callback(self, msg):
-        """Store green ball position"""
-        self.green_ball_pos = np.array([msg.point.x, msg.point.y, msg.point.z])
-        self.get_logger().debug(f"Green ball updated: {self.green_ball_pos}")
-    
+        """Store or clear green ball position"""
+        if msg.point.x == 0.0 and msg.point.y == 0.0 and msg.point.z == 0.0:
+            if self.green_ball_pos is not None:
+                self.get_logger().info("Green ball lost")
+            self.green_ball_pos = None
+        else:
+            self.green_ball_pos = np.array([msg.point.x, msg.point.y, msg.point.z])
+            self.get_logger().debug(f"Green ball updated: {self.green_ball_pos}")
+
     def orange_ball_callback(self, msg):
-        """Store orange ball position"""
-        self.orange_ball_pos = np.array([msg.point.x, msg.point.y, msg.point.z])
-        self.get_logger().debug(f"Orange ball updated: {self.orange_ball_pos}")
+        """Store or clear orange ball position"""
+        if msg.point.x == 0.0 and msg.point.y == 0.0 and msg.point.z == 0.0:
+            if self.orange_ball_pos is not None:
+                self.get_logger().info("Orange ball lost")
+            self.orange_ball_pos = None
+        else:
+            self.orange_ball_pos = np.array([msg.point.x, msg.point.y, msg.point.z])
+            self.get_logger().debug(f"Orange ball updated: {self.orange_ball_pos}")
     
     def camera_to_robot_frame(self, camera_pos):
         """
@@ -96,8 +99,6 @@ class BallTrackingController(Node):
         Camera frame: X right, Y down, Z forward
         Robot frame: X forward, Y left, Z up
         """
-        # Transform from camera optical frame to robot base frame
-        # This is a simplified transform - you may need to adjust based on mounting
         
         # Camera coordinates
         x_cam, y_cam, z_cam = camera_pos
@@ -188,9 +189,9 @@ class BallTrackingController(Node):
                 balls.append((self.orange_ball_pos, 'orange'))
             
             if balls:
-                # Find closest based on distance from robot base
+                # Find closest based on distance from robot base (in robot frame)
                 closest = min(balls, key=lambda b: np.linalg.norm(self.camera_to_robot_frame(b[0])))
-                return closest
+                return closest[0], closest[1]  # Return camera frame pos and color
         
         elif self.target_mode == 'alternate':
             # Alternate between balls
@@ -223,7 +224,8 @@ class BallTrackingController(Node):
         msg.data = [
             utils.rad2steps(joint_angles[0]),
             utils.rad2steps(joint_angles[1]),
-            utils.rad2steps(joint_angles[2])
+            utils.rad2steps(joint_angles[2]),
+            utils.rad2steps(joint_angles[3])
         ]
         
         self.joint_cmd_pub.publish(msg)

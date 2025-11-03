@@ -25,7 +25,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'img_processor = robot_project.img_processor:main',
+            'ball_detector = robot_project.ball_detector:main',
+            'ball_tracking_controller = robot_project.ball_tracking_controller:main',
             'send_single_joint_command = robot_project.send_single_joint_command:main',
             'robot_visualizer = robot_project.robot_visualizer:main',
             'visualizer_to_robot = robot_project.visualizer_to_robot:main'

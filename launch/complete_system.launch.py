@@ -11,22 +11,42 @@ from ament_index_python.packages import get_package_share_directory
 def generate_launch_description():
     package_name = 'robot_project'
     
-    # Declare launch arguments for ball tracking controller
+    # Ball detector optimization arguments
+    enable_viz_arg = DeclareLaunchArgument(
+        'enable_visualization',
+        default_value='true',
+        description='Enable OpenCV visualization window (disable for better performance)'
+    )
+    
+    processing_rate_arg = DeclareLaunchArgument(
+        'processing_rate',
+        default_value='2.5',
+        description='Ball detection processing rate in Hz (lower = better performance)'
+    )
+    
+    # Ball tracking controller arguments
     target_mode_arg = DeclareLaunchArgument(
         'target_mode',
-        default_value='green',
+        default_value='closest',
         description='Target mode: green, orange, closest, or alternate'
     )
     
     control_mode_arg = DeclareLaunchArgument(
         'control_mode',
-        default_value='manual',
+        default_value='auto',
         description='Control mode: manual or auto'
     )
     
+    tracking_rate_arg = DeclareLaunchArgument(
+        'tracking_rate',
+        default_value='1.0',
+        description='Auto-tracking rate in Hz (only applies in auto mode)'
+    )
+    
+    # Camera calibration arguments
     camera_x_arg = DeclareLaunchArgument(
         'camera_x_offset',
-        default_value='0.2',
+        default_value='0.0',
         description='Camera X offset from robot base (meters)'
     )
     
@@ -38,8 +58,14 @@ def generate_launch_description():
     
     camera_z_arg = DeclareLaunchArgument(
         'camera_z_offset',
-        default_value='0.3',
+        default_value='0.1',
         description='Camera Z offset from robot base (meters)'
+    )
+    
+    approach_height_arg = DeclareLaunchArgument(
+        'approach_height_offset',
+        default_value='0.05',
+        description='Height offset above ball for approach (meters)'
     )
     
     # RealSense camera launch
@@ -60,14 +86,16 @@ def generate_launch_description():
         }.items()
     )
     
-    # Ball detector node
+    # Ball detector node with optimization parameters
     node_ball_detector = Node(
         package=package_name,
         executable='ball_detector',
         name='ball_detector',
         output='screen',
         parameters=[{
-            'use_sim_time': False
+            'use_sim_time': False,
+            'enable_visualization': LaunchConfiguration('enable_visualization'),
+            'processing_rate': LaunchConfiguration('processing_rate')
         }]
     )
     
@@ -83,7 +111,8 @@ def generate_launch_description():
             'camera_x_offset': LaunchConfiguration('camera_x_offset'),
             'camera_y_offset': LaunchConfiguration('camera_y_offset'),
             'camera_z_offset': LaunchConfiguration('camera_z_offset'),
-            'approach_height_offset': 0.05
+            'approach_height_offset': LaunchConfiguration('approach_height_offset'),
+            'tracking_rate': LaunchConfiguration('tracking_rate')
         }]
     )
     
@@ -110,22 +139,23 @@ def generate_launch_description():
     )
     
     return LaunchDescription([
-        # Launch arguments
+        enable_viz_arg,
+        processing_rate_arg,
+        
         target_mode_arg,
         control_mode_arg,
+        tracking_rate_arg,
+        
         camera_x_arg,
         camera_y_arg,
         camera_z_arg,
+        approach_height_arg,
         
-        # Launch RealSense camera
         realsense_launch,
         
-        # Launch ball detection and tracking
         node_ball_detector,
         node_ball_tracking,
         
-        # Launch original robot control nodes
-        # Comment these out if you want to run ball tracking standalone
         node_robot_visualizer,
         node_visualizer_to_robot,
         node_send_single_joint_command

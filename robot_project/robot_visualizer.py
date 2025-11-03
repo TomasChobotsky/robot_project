@@ -12,6 +12,59 @@ from std_msgs.msg import Int32MultiArray
 
 class myDynamixelVisualizer(Node):
     def __init__(self) -> None:
+        super().__init__("my_dynamixel_visualizer")
+        self.sub = self.create_subscription(Int32MultiArray, 'dxl_joint_cmd', self.listener_callback, 10)
+        self.create_config()
+        self.create_visualizer()
+        self.prev_joint = [0] * 4
+        print("Created")
+
+    def create_config(self):
+        self.my_conf_robot = cg.get_robot_config_1(link1=0.145, link1_offset=0.0,
+                                       link2=0.350, link2_offset=0.0,
+                                       link3=0.330, link3_offset=0.0,
+                                       link4=0.100, link4_offset=0.0)
+        
+    def create_visualizer(self):
+        self.robot_teach = self.my_conf_robot.teach(self.my_conf_robot.q, backend='pyplot', block=False)
+        self.plot = pt.plot_baseplate(self.robot_teach)
+
+    def listener_callback(self, msg):
+        data = list(msg.data)
+        if not data:
+            return
+        
+        for i, item in enumerate(data):
+            if i < len(self.prev_joint) and item != self.prev_joint[i]:
+                self.my_conf_robot.q[i] = utils.steps2rad(item)
+                self.prev_joint[i] = utils.steps2rad(item)
+
+        # Jog the robot on base plate
+        self.plot.step()
+    
+def main(args=None):
+    rclpy.init(args=args)
+    node = myDynamixelVisualizer()
+    rclpy.spin(node)
+
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+
+'''
+import rclpy
+from rclpy.node import Node
+
+from adatools import config_generator as cg
+from adatools import plotting_tools as pt
+from adatools import utils as utils
+
+from std_msgs.msg import Int32MultiArray
+
+
+class myDynamixelVisualizer(Node):
+    def __init__(self) -> None:
         super().__init__("robot_visualizer")
         self.pub = self.create_publisher(Int32MultiArray, 'dxl_joint_cmd', 10)
         self.create_config()
@@ -35,7 +88,7 @@ class myDynamixelVisualizer(Node):
         msg = Int32MultiArray()
         msg.data = [utils.rad2steps(robot[0]), utils.rad2steps(robot[1]), utils.rad2steps(robot[2])]
         self.pub.publish(msg)
-        self.get_logger().info('Publishing: "%s"' % msg.data)
+        #self.get_logger().info('Publishing: "%s"' % msg.data)
         self.plot.step()
     
 def main(args=None):
@@ -47,3 +100,4 @@ def main(args=None):
 
 if __name__ == '__main__':
     main()
+'''

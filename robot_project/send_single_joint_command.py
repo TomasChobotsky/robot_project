@@ -18,7 +18,6 @@ class myDynamixelController(Node):
         self.prev_joint = [0] * len(self.dxls.dxl_ids)
 
     def listener_callback(self, msg):
-        print("Position command received")
         data = list(msg.data)
         if not data:
             return

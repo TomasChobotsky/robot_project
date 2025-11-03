@@ -12,19 +12,16 @@ import pyrealsense2 as rs
 class BallDetector(Node):
     def __init__(self):
         super().__init__("ball_detector")
-        
-        # CV Bridge for converting ROS images to OpenCV
+
         self.bridge = CvBridge()
         
-        # Subscribers for RealSense topics
         self.color_sub = self.create_subscription(
-            Image, '/camera/camera/color/image_raw', self.color_callback, 10)
+            Image, '/camera/color/image_raw', self.color_callback, 10)
         self.depth_sub = self.create_subscription(
-            Image, '/camera/camera/aligned_depth_to_color/image_raw', self.depth_callback, 10)
+            Image, '/camera/aligned_depth_to_color/image_raw', self.depth_callback, 10)
         self.camera_info_sub = self.create_subscription(
-            CameraInfo, '/camera/camera/color/camera_info', self.camera_info_callback, 10)
+            CameraInfo, '/camera/color/camera_info', self.camera_info_callback, 10)
         
-        # Publishers
         self.green_ball_pub = self.create_publisher(PointStamped, 'green_ball_position', 10)
         self.orange_ball_pub = self.create_publisher(PointStamped, 'orange_ball_position', 10)
         self.target_color_pub = self.create_publisher(String, 'target_ball_color', 10)
@@ -35,21 +32,30 @@ class BallDetector(Node):
         self.camera_intrinsics = None
         
         # Color ranges in HSV for detection
-        # Green ball HSV range
         self.green_lower = np.array([35, 50, 50])
         self.green_upper = np.array([85, 255, 255])
         
-        # Orange ball HSV range
         self.orange_lower = np.array([5, 100, 100])
         self.orange_upper = np.array([25, 255, 255])
         
         # Minimum contour area to filter noise
         self.min_contour_area = 500
         
-        # Timer for processing (10 Hz)
-        self.create_timer(0.1, self.process_callback)
+        # Enable/disable visualization (disable for better performance)
+        self.declare_parameter('enable_visualization', False)
+        self.enable_viz = self.get_parameter('enable_visualization').value
+        
+        # Processing rate (Hz) - lower = less CPU usage
+        self.declare_parameter('processing_rate', 5.0)
+        processing_rate = self.get_parameter('processing_rate').value
+        
+        self.create_timer(1.0 / processing_rate, self.process_callback)
+        
+        # Pre-allocate morphological kernel
+        self.morph_kernel = np.ones((5, 5), np.uint8)
         
         self.get_logger().info("Ball Detector Node Started")
+        self.get_logger().info(f"Visualization: {self.enable_viz}, Rate: {processing_rate} Hz")
     
     def camera_info_callback(self, msg):
         """Store camera intrinsics for depth-to-3D conversion"""
@@ -79,21 +85,17 @@ class BallDetector(Node):
         except Exception as e:
             self.get_logger().error(f"Error converting depth image: {e}")
     
-    def detect_ball(self, color_image, lower_hsv, upper_hsv, color_name):
+    def detect_ball(self, hsv_image, lower_hsv, upper_hsv, color_name):
         """
-        Detect a ball of specified color in the image
+        Detect a ball of specified color in the HSV image
         Returns: (center_x, center_y, radius) or None
         """
-        # Convert to HSV color space
-        hsv = cv2.cvtColor(color_image, cv2.COLOR_BGR2HSV)
-        
         # Create mask for specified color
-        mask = cv2.inRange(hsv, lower_hsv, upper_hsv)
+        mask = cv2.inRange(hsv_image, lower_hsv, upper_hsv)
         
-        # Morphological operations to reduce noise
-        kernel = np.ones((5, 5), np.uint8)
-        mask = cv2.erode(mask, kernel, iterations=2)
-        mask = cv2.dilate(mask, kernel, iterations=2)
+        # Morphological operations to reduce noise (using pre-allocated kernel)
+        mask = cv2.erode(mask, self.morph_kernel, iterations=2)
+        mask = cv2.dilate(mask, self.morph_kernel, iterations=2)
         
         # Find contours
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -119,7 +121,7 @@ class BallDetector(Node):
         else:
             center_x, center_y = int(x), int(y)
         
-        self.get_logger().info(f"{color_name} ball detected at pixel ({center_x}, {center_y}), radius: {radius:.1f}")
+        self.get_logger().debug(f"{color_name} ball at pixel ({center_x}, {center_y}), r: {radius:.1f}")
         
         return (center_x, center_y, radius)
     
@@ -159,56 +161,72 @@ class BallDetector(Node):
         elif color_name == "orange":
             self.orange_ball_pub.publish(msg)
         
-        self.get_logger().info(f"{color_name.capitalize()} ball at: x={position_3d[0]:.3f}, y={position_3d[1]:.3f}, z={position_3d[2]:.3f}")
+        self.get_logger().debug(f"{color_name} ball: x={position_3d[0]:.3f}, y={position_3d[1]:.3f}, z={position_3d[2]:.3f}")
     
     def process_callback(self):
         """Main processing loop"""
         if self.color_image is None or self.depth_image is None:
             return
-        
-        # Create a copy for visualization
-        display_image = self.color_image.copy()
-        
-        # Detect green ball
-        green_detection = self.detect_ball(self.color_image, self.green_lower, self.green_upper, "green")
+
+        hsv = cv2.cvtColor(self.color_image, cv2.COLOR_BGR2HSV)
+        display_image = self.color_image.copy() if self.enable_viz else None
+
+        # ---------- GREEN BALL ----------
+        green_detection = self.detect_ball(hsv, self.green_lower, self.green_upper, "green")
         if green_detection:
             cx, cy, radius = green_detection
-            cv2.circle(display_image, (cx, cy), int(radius), (0, 255, 0), 2)
-            cv2.circle(display_image, (cx, cy), 5, (0, 255, 0), -1)
-            cv2.putText(display_image, "GREEN", (cx - 30, cy - int(radius) - 10),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-            
-            # Convert to 3D and publish
+            if self.enable_viz:
+                cv2.circle(display_image, (cx, cy), int(radius), (0, 255, 0), 2)
+                cv2.circle(display_image, (cx, cy), 5, (0, 255, 0), -1)
+                cv2.putText(display_image, "GREEN", (cx - 30, cy - int(radius) - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
             pos_3d = self.pixel_to_3d(cx, cy)
             if pos_3d:
                 self.publish_ball_position(pos_3d, "green")
-        
-        # Detect orange ball
-        orange_detection = self.detect_ball(self.color_image, self.orange_lower, self.orange_upper, "orange")
+        else:
+            # Publish empty message to indicate "lost"
+            msg = PointStamped()
+            msg.header.stamp = self.get_clock().now().to_msg()
+            msg.header.frame_id = "camera_color_optical_frame"
+            self.green_ball_pub.publish(msg)
+
+        # ---------- ORANGE BALL ----------
+        orange_detection = self.detect_ball(hsv, self.orange_lower, self.orange_upper, "orange")
         if orange_detection:
             cx, cy, radius = orange_detection
-            cv2.circle(display_image, (cx, cy), int(radius), (0, 165, 255), 2)
-            cv2.circle(display_image, (cx, cy), 5, (0, 165, 255), -1)
-            cv2.putText(display_image, "ORANGE", (cx - 30, cy - int(radius) - 10),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
-            
-            # Convert to 3D and publish
+            if self.enable_viz:
+                cv2.circle(display_image, (cx, cy), int(radius), (0, 165, 255), 2)
+                cv2.circle(display_image, (cx, cy), 5, (0, 165, 255), -1)
+                cv2.putText(display_image, "ORANGE", (cx - 30, cy - int(radius) - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
             pos_3d = self.pixel_to_3d(cx, cy)
             if pos_3d:
                 self.publish_ball_position(pos_3d, "orange")
-        
-        # Display the image with detections
-        cv2.imshow("Ball Detection", display_image)
-        cv2.waitKey(1)
+        else:
+            msg = PointStamped()
+            msg.header.stamp = self.get_clock().now().to_msg()
+            msg.header.frame_id = "camera_color_optical_frame"
+            self.orange_ball_pub.publish(msg)
+
+        if self.enable_viz:
+            cv2.imshow("Ball Detection", display_image)
+            cv2.waitKey(1)
+
 
 
 def main(args=None):
     rclpy.init(args=args)
     node = BallDetector()
-    rclpy.spin(node)
+    
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    
     node.destroy_node()
     rclpy.shutdown()
-    cv2.destroyAllWindows()
+    if node.enable_viz:
+        cv2.destroyAllWindows()
 
 
 if __name__ == '__main__':
