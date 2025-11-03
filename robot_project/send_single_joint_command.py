@@ -10,9 +10,9 @@ class myDynamixelController(Node):
     def __init__(self) -> None:
         super().__init__("send_single_joint_command")
         self.sub = self.create_subscription(Int32MultiArray, 'dxl_actual_joint_cmd', self.listener_callback, 10)
-        self.dxls = CustomDXL(dxl_ids=[2, 3], profile_velocity=[70, 60])
+        self.dxls = CustomDXL(dxl_ids=[2, 3, 4], profile_velocity=[50, 50, 50])
         self.dxls.open_port()
-        self.dxls.send_goal(goal_pos=[2047, 2047])
+        self.dxls.send_goal(goal_pos=[2047, 2047, 2047])
         print("Created")
         print("Publish data between [1023, 3073] to the topic /dxl_actual_joint_cmd")
         self.prev_joint = [0] * len(self.dxls.dxl_ids)

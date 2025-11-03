@@ -31,8 +31,9 @@ class myDynamixelVisualizer(Node):
         self.plot = pt.plot_baseplate(self.robot_teach)
 
     def timer_callback(self):
+        robot = self.my_conf_robot.q
         msg = Int32MultiArray()
-        msg.data = [utils.rad2steps(self.my_conf_robot.q[0]), utils.rad2steps(self.my_conf_robot.q[1])]
+        msg.data = [utils.rad2steps(robot[0]), utils.rad2steps(robot[1]), utils.rad2steps(robot[2])]
         self.pub.publish(msg)
         self.get_logger().info('Publishing: "%s"' % msg.data)
         self.plot.step()
