@@ -22,9 +22,9 @@ class BallTrackingController(Node):
         self.target_pub = self.create_publisher(String, 'current_target', 10)
         
         self.my_conf_robot = cg.get_robot_config_1(
-            link1=0.145, link1_offset=0.0,
-            link2=0.350, link2_offset=0.0,
-            link3=0.330, link3_offset=0.0,
+            link1=0.155, link1_offset=0.0,
+            link2=0.250, link2_offset=0.0,
+            link3=0.250, link3_offset=0.0,
             link4=0.100, link4_offset=0.0
         )
         
@@ -47,10 +47,10 @@ class BallTrackingController(Node):
         self.cam_rot = self.get_parameter('camera_rotation').value
         
         # Safe workspace limits
-        self.workspace_x_min = 0.1
-        self.workspace_x_max = 0.7
-        self.workspace_y_min = -0.4
-        self.workspace_y_max = 0.4
+        self.workspace_x_min = 0.05
+        self.workspace_x_max = 0.8
+        self.workspace_y_min = -0.5
+        self.workspace_y_max = 0.5
         self.workspace_z_min = 0.0
         self.workspace_z_max = 0.5
         
@@ -108,6 +108,9 @@ class BallTrackingController(Node):
         x_robot = self.cam_x + z_cam  # Camera Z is robot X (forward)
         y_robot = self.cam_y - x_cam  # Camera X is robot -Y (camera right is robot left)
         z_robot = self.cam_z - y_cam  # Camera Y is robot -Z (camera down is robot down)
+
+        self.get_logger().info(f"Camera pos: [{x_cam:.3f}, {y_cam:.3f}, {z_cam:.3f}]")
+        self.get_logger().info(f"Robot pos: [{x_robot:.3f}, {y_robot:.3f}, {z_robot:.3f}]")
         
         return np.array([x_robot, y_robot, z_robot])
     
@@ -148,7 +151,7 @@ class BallTrackingController(Node):
             sol = self.my_conf_robot.ikine_LM(
                 Tgoal, 
                 q0=self.my_conf_robot.qr,  # Start from ready position
-                mask=[1, 1, 1, 0.5, 0.5, 1]  # Prioritize position over orientation
+                mask=[1, 1, 1, 0.2, 0.2, 0.3]  # Prioritize position over orientation
             )
             
             if sol.success:

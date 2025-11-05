@@ -20,7 +20,7 @@ def generate_launch_description():
     
     processing_rate_arg = DeclareLaunchArgument(
         'processing_rate',
-        default_value='2.5',
+        default_value='5',
         description='Ball detection processing rate in Hz (lower = better performance)'
     )
     
@@ -46,7 +46,7 @@ def generate_launch_description():
     # Camera calibration arguments
     camera_x_arg = DeclareLaunchArgument(
         'camera_x_offset',
-        default_value='0.0',
+        default_value='0.11',
         description='Camera X offset from robot base (meters)'
     )
     
@@ -58,13 +58,19 @@ def generate_launch_description():
     
     camera_z_arg = DeclareLaunchArgument(
         'camera_z_offset',
-        default_value='0.1',
+        default_value='0.025',
         description='Camera Z offset from robot base (meters)'
+    )
+
+    camera_rot_arg = DeclareLaunchArgument(
+        'camera_rotation',
+        default_value='-30',
+        description='Camera rotation angle to the base (degree)'
     )
     
     approach_height_arg = DeclareLaunchArgument(
         'approach_height_offset',
-        default_value='0.05',
+        default_value='0.02',
         description='Height offset above ball for approach (meters)'
     )
     
@@ -81,8 +87,8 @@ def generate_launch_description():
             'align_depth.enable': 'true',
             'enable_color': 'true',
             'enable_depth': 'true',
-            'depth_module.profile': '640x480x30',
-            'rgb_camera.profile': '640x480x30'
+            'depth_module.profile': '1280x720x30',
+            'rgb_camera.profile': '1280x720x30'
         }.items()
     )
     
@@ -111,6 +117,7 @@ def generate_launch_description():
             'camera_x_offset': LaunchConfiguration('camera_x_offset'),
             'camera_y_offset': LaunchConfiguration('camera_y_offset'),
             'camera_z_offset': LaunchConfiguration('camera_z_offset'),
+            'camera_rotation': LaunchConfiguration('camera_rotation'),
             'approach_height_offset': LaunchConfiguration('approach_height_offset'),
             'tracking_rate': LaunchConfiguration('tracking_rate')
         }]
@@ -149,6 +156,7 @@ def generate_launch_description():
         camera_x_arg,
         camera_y_arg,
         camera_z_arg,
+        camera_rot_arg,
         approach_height_arg,
         
         realsense_launch,
@@ -157,6 +165,5 @@ def generate_launch_description():
         node_ball_tracking,
         
         node_robot_visualizer,
-        node_visualizer_to_robot,
         node_send_single_joint_command
     ])
