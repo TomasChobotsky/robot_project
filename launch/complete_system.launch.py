@@ -45,27 +45,27 @@ def generate_launch_description():
     
     # Camera calibration arguments
     camera_x_arg = DeclareLaunchArgument(
-        'camera_x_offset',
-        default_value='0.11',
-        description='Camera X offset from robot base (meters)'
+    'camera_x_offset',
+    default_value='0.25',  # 200-300mm front of robot (in robot's forward direction)
+    description='Camera X offset from robot base (meters)'
     )
-    
+
     camera_y_arg = DeclareLaunchArgument(
         'camera_y_offset',
-        default_value='0.0',
+        default_value='0.45',  # 450mm to the side (in robot's left direction)
         description='Camera Y offset from robot base (meters)'
     )
-    
+
     camera_z_arg = DeclareLaunchArgument(
         'camera_z_offset',
-        default_value='0.025',
+        default_value='0.15',  # 100-200mm up from robot base
         description='Camera Z offset from robot base (meters)'
     )
 
     camera_rot_arg = DeclareLaunchArgument(
         'camera_rotation',
-        default_value='-30',
-        description='Camera rotation angle to the base (degree)'
+        default_value='90',  # 90° rotation (camera looking from side toward robot)
+        description='Camera rotation angle around vertical axis (degrees)'
     )
     
     approach_height_arg = DeclareLaunchArgument(

@@ -22,9 +22,9 @@ class BallTrackingController(Node):
         self.target_pub = self.create_publisher(String, 'current_target', 10)
         
         self.my_conf_robot = cg.get_robot_config_1(
-            link1=0.155, link1_offset=0.0,
-            link2=0.250, link2_offset=0.0,
-            link3=0.250, link3_offset=0.0,
+            link1=0.200, link1_offset=0.0,
+            link2=0.330, link2_offset=0.0,
+            link3=0.340, link3_offset=0.0,
             link4=0.100, link4_offset=0.0
         )
         
@@ -98,20 +98,36 @@ class BallTrackingController(Node):
         Transform position from camera frame to robot base frame
         Camera frame: X right, Y down, Z forward
         Robot frame: X forward, Y left, Z up
+        
+        Applies camera position offset and rotation around vertical axis
         """
         
         # Camera coordinates
         x_cam, y_cam, z_cam = camera_pos
         
-        # Apply camera mounting transform
-        # Assuming camera is mounted looking forward and down
-        x_robot = self.cam_x + z_cam  # Camera Z is robot X (forward)
-        y_robot = self.cam_y - x_cam  # Camera X is robot -Y (camera right is robot left)
-        z_robot = self.cam_z - y_cam  # Camera Y is robot -Z (camera down is robot down)
+        # Convert camera rotation from degrees to radians
+        theta = np.radians(self.cam_rot)
+        
+        x_std = z_cam      # Camera forward (Z) = standard forward (X)
+        y_std = -x_cam     # Camera right (X) = standard left (-Y)
+        z_std = -y_cam     # Camera down (Y) = standard up (-Z)
+        
+        # Rotation matrix around Z-axis:
+        # [cos(θ)  -sin(θ)   0]
+        # [sin(θ)   cos(θ)   0]
+        # [  0        0      1]
+        x_rotated = x_std * np.cos(theta) - y_std * np.sin(theta)
+        y_rotated = x_std * np.sin(theta) + y_std * np.cos(theta)
+        z_rotated = z_std
+        
+        # Step 3: Add camera mounting position offset
+        x_robot = self.cam_x + x_rotated
+        y_robot = self.cam_y + y_rotated
+        z_robot = self.cam_z + z_rotated
 
         self.get_logger().info(f"Camera pos: [{x_cam:.3f}, {y_cam:.3f}, {z_cam:.3f}]")
         self.get_logger().info(f"Robot pos: [{x_robot:.3f}, {y_robot:.3f}, {z_robot:.3f}]")
-        
+    
         return np.array([x_robot, y_robot, z_robot])
     
     def is_in_workspace(self, position):
