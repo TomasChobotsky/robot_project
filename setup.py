@@ -30,7 +30,8 @@ setup(
             'send_single_joint_command = robot_project.send_single_joint_command:main',
             'robot_visualizer = robot_project.robot_visualizer:main',
             'visualizer_to_robot = robot_project.visualizer_to_robot:main',
-            'precision_test = robot_project.precision_test:main'
+            'precision_test = robot_project.precision_test:main',
+            'robot_test_gui = robot_project.robot_test_gui:main',
         ],
     },
 )
