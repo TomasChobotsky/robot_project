@@ -36,10 +36,10 @@ class BallTrackingController(Node):
         self.target_mode = self.get_parameter('target_mode').value
         
         # Camera to robot base transform
-        self.declare_parameter('camera_x_offset', 0.0)  # meters
+        self.declare_parameter('camera_x_offset', 1.0)  # meters
         self.declare_parameter('camera_y_offset', 0.0)  # meters
-        self.declare_parameter('camera_z_offset', 0.0)  # meters
-        self.declare_parameter('camera_rotation', 0.0)  # degrees around Z
+        self.declare_parameter('camera_z_offset', 0.1)  # meters
+        self.declare_parameter('camera_rotation', 180.0)  # degrees around Z
         
         self.cam_x = self.get_parameter('camera_x_offset').value
         self.cam_y = self.get_parameter('camera_y_offset').value

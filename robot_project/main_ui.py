@@ -93,25 +93,25 @@ class Ui_RobotTestSuite(object):
         
         self.cameraXSpin = QtWidgets.QDoubleSpinBox(self.cameraCalibGroupBox)
         self.cameraXSpin.setRange(-2.0, 2.0)
-        self.cameraXSpin.setValue(0.25)
+        self.cameraXSpin.setValue(1.0)
         self.cameraXSpin.setSingleStep(0.01)
         self.cameraCalibLayout.addRow("X Offset (forward):", self.cameraXSpin)
         
         self.cameraYSpin = QtWidgets.QDoubleSpinBox(self.cameraCalibGroupBox)
         self.cameraYSpin.setRange(-2.0, 2.0)
-        self.cameraYSpin.setValue(0.45)
+        self.cameraYSpin.setValue(0.0)
         self.cameraYSpin.setSingleStep(0.01)
         self.cameraCalibLayout.addRow("Y Offset (left):", self.cameraYSpin)
         
         self.cameraZSpin = QtWidgets.QDoubleSpinBox(self.cameraCalibGroupBox)
         self.cameraZSpin.setRange(-2.0, 2.0)
-        self.cameraZSpin.setValue(0.15)
+        self.cameraZSpin.setValue(0.1)
         self.cameraZSpin.setSingleStep(0.01)
         self.cameraCalibLayout.addRow("Z Offset (up):", self.cameraZSpin)
         
         self.cameraRotSpin = QtWidgets.QDoubleSpinBox(self.cameraCalibGroupBox)
         self.cameraRotSpin.setRange(-180.0, 180.0)
-        self.cameraRotSpin.setValue(90.0)
+        self.cameraRotSpin.setValue(180.0)
         self.cameraRotSpin.setSuffix(" °")
         self.cameraCalibLayout.addRow("Rotation (Z-axis):", self.cameraRotSpin)
         

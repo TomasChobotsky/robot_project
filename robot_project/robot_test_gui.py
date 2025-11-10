@@ -24,7 +24,7 @@ class RobotTestGUI(QMainWindow, Ui_RobotTestSuite):
     def __init__(self, parent=None):
         super(RobotTestGUI, self).__init__(parent)
         self.setupUi(self)
-        self.setWindowTitle("Robot Test Suite v1.0")
+        self.setWindowTitle("Robot Test UI")
         
         # Process tracking
         self.system_process = None
