@@ -21,9 +21,9 @@ class myDynamixelVisualizer(Node):
 
     def create_config(self):
         self.my_conf_robot = cg.get_robot_config_1(link1=0.200, link1_offset=0.0,
-            link2=0.330, link2_offset=0.0,
-            link3=0.335, link3_offset=0.0,
-            link4=0.080, link4_offset=0.0)
+            link2=0.270, link2_offset=0.0,
+            link3=0.275, link3_offset=0.0,
+            link4=0.240, link4_offset=0.0)
         
     def create_visualizer(self):
         self.robot_teach = self.my_conf_robot.teach(self.my_conf_robot.q, backend='pyplot', block=False)

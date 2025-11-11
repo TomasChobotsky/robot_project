@@ -24,54 +24,36 @@ def generate_launch_description():
         description='Ball detection processing rate in Hz (lower = better performance)'
     )
     
-    # Ball tracking controller arguments
-    target_mode_arg = DeclareLaunchArgument(
-        'target_mode',
-        default_value='closest',
-        description='Target mode: green, orange, closest, or alternate'
-    )
-    
-    control_mode_arg = DeclareLaunchArgument(
-        'control_mode',
-        default_value='auto',
-        description='Control mode: manual or auto'
-    )
-    
     tracking_rate_arg = DeclareLaunchArgument(
         'tracking_rate',
         default_value='1.0',
         description='Auto-tracking rate in Hz (only applies in auto mode)'
     )
     
+    # [0.429, 0.038, 0.116] 0.006 0.175
     # Camera calibration arguments
     camera_x_arg = DeclareLaunchArgument(
     'camera_x_offset',
-    default_value='1.0',  # 200-300mm front of robot (in robot's forward direction)
+    default_value='0.971',
     description='Camera X offset from robot base (meters)'
     )
 
     camera_y_arg = DeclareLaunchArgument(
         'camera_y_offset',
-        default_value='0.0',  # 450mm to the side (in robot's left direction)
+        default_value='-0.045',
         description='Camera Y offset from robot base (meters)'
     )
 
     camera_z_arg = DeclareLaunchArgument(
         'camera_z_offset',
-        default_value='0.10',  # 100-200mm up from robot base
+        default_value='0.15',
         description='Camera Z offset from robot base (meters)'
     )
 
     camera_rot_arg = DeclareLaunchArgument(
         'camera_rotation',
-        default_value='180',  # 90° rotation (camera looking from side toward robot)
+        default_value='180',
         description='Camera rotation angle around vertical axis (degrees)'
-    )
-    
-    approach_height_arg = DeclareLaunchArgument(
-        'approach_height_offset',
-        default_value='0.1',
-        description='Height offset above ball for approach (meters)'
     )
     
     # RealSense camera launch
@@ -112,13 +94,10 @@ def generate_launch_description():
         name='ball_tracking_controller',
         output='screen',
         parameters=[{
-            'target_mode': LaunchConfiguration('target_mode'),
-            'control_mode': LaunchConfiguration('control_mode'),
             'camera_x_offset': LaunchConfiguration('camera_x_offset'),
             'camera_y_offset': LaunchConfiguration('camera_y_offset'),
             'camera_z_offset': LaunchConfiguration('camera_z_offset'),
             'camera_rotation': LaunchConfiguration('camera_rotation'),
-            'approach_height_offset': LaunchConfiguration('approach_height_offset'),
             'tracking_rate': LaunchConfiguration('tracking_rate')
         }]
     )
@@ -142,15 +121,12 @@ def generate_launch_description():
         enable_viz_arg,
         processing_rate_arg,
         
-        target_mode_arg,
-        control_mode_arg,
         tracking_rate_arg,
         
         camera_x_arg,
         camera_y_arg,
         camera_z_arg,
         camera_rot_arg,
-        approach_height_arg,
         
         realsense_launch,
         
