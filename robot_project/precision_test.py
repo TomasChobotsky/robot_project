@@ -2,28 +2,34 @@
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Int32MultiArray
+from std_srvs.srv import Trigger
+from example_interfaces.srv import SetBool
 from adatools import config_generator as cg
 from adatools import utils as utils
 from spatialmath import SE3
 import numpy as np
 import time
 
-class PrecisionChallenge(Node):
+class PrecisionTestService(Node):
     def __init__(self):
-        super().__init__("precision_challenge")
+        super().__init__("precision_test_service")
         
         # Publisher for joint commands
         self.joint_cmd_pub = self.create_publisher(Int32MultiArray, 'dxl_joint_cmd', 10)
+        
+        # Services for step-by-step control
+        self.go_home_srv = self.create_service(Trigger, 'precision_go_home', self.go_home_callback)
+        self.execute_trial_srv = self.create_service(Trigger, 'precision_execute_trial', self.execute_trial_callback)
         
         # Robot configuration
         self.my_conf_robot = cg.get_robot_config_1(
             link1=0.200, link1_offset=0.0,
             link2=0.330, link2_offset=0.0,
-            link3=0.340, link3_offset=0.0,
-            link4=0.100, link4_offset=0.0
+            link3=0.335, link3_offset=0.0,
+            link4=0.080, link4_offset=0.0
         )
         
-        # Home pose (define this once, can't change after target is announced)
+        # Parameters
         self.declare_parameter('home_q1', 0.0)
         self.declare_parameter('home_q2', 0.0)
         self.declare_parameter('home_q3', 0.0)
@@ -36,48 +42,61 @@ class PrecisionChallenge(Node):
             self.get_parameter('home_q4').value
         ])
         
-        # Pen offset from end effector (measure this carefully!)
-        self.declare_parameter('pen_z_offset', 0.0)  # pen tip below end effector
+        # Target position (will be updated via parameters)
+        self.declare_parameter('target_x', 0.3)
+        self.declare_parameter('target_y', 0.0)
+        self.declare_parameter('target_z', 0.1)
+        
+        # Pen offset from end effector
+        self.declare_parameter('pen_z_offset', 0.0)
         self.pen_offset = self.get_parameter('pen_z_offset').value
         
         # Movement parameters
-        self.declare_parameter('move_duration', 3.0)  # seconds to reach target
-        self.declare_parameter('marking_duration', 1.0)  # seconds to hold for marking
+        self.declare_parameter('move_duration', 3.0)
+        self.declare_parameter('marking_duration', 1.0)
         
         self.move_time = self.get_parameter('move_duration').value
         self.mark_time = self.get_parameter('marking_duration').value
         
-        self.get_logger().info("=== Precision Challenge Node Started ===")
+        self.trial_count = 0
+        
+        self.get_logger().info("=== Precision Test Service Started ===")
         self.get_logger().info(f"Home joints: {self.home_joints}")
-        self.get_logger().info(f"Pen offset: {self.pen_offset}m")
+        self.get_logger().info("Ready for service calls")
     
     def compute_ik(self, target_x, target_y, target_z):
-        """
-        Compute inverse kinematics for target position
-        Returns: joint angles in radians or None if failed
-        """
         # Adjust Z for pen offset
         z_adjusted = target_z - self.pen_offset
         
-        # Create target pose (pen pointing down)
-        Tgoal = SE3(target_x, target_y, z_adjusted) * SE3.Rx(180, 'deg')
+        # End effector pointing down (use Ry for proper orientation)
+        Tgoal = SE3(target_x, target_y, z_adjusted) * SE3.Ry(180, 'deg')
         
         try:
             sol = self.my_conf_robot.ikine_LM(
                 Tgoal, 
-                q0=self.home_joints,  # Start from home position
-                mask=[1, 1, 1, 0.2, 0.2, 0.3]
+                q0=self.home_joints,
+                mask=[1, 1, 1, 1, 1, 1],
+                ilimit=1000,
+                slimit=200,
             )
             
             if sol.success:
                 T_actual = self.my_conf_robot.fkine(sol.q)
                 trans_error = np.linalg.norm(Tgoal.t - T_actual.t)
                 
-                if trans_error < 0.02:  # 2cm tolerance
-                    self.get_logger().info(f"IK success! Error: {trans_error*1000:.2f}mm")
+                # Check orientation
+                z_desired = Tgoal.R[:3, 2]
+                z_actual = T_actual.R[:3, 2]
+                orientation_error = np.arccos(np.clip(np.dot(z_desired, z_actual), -1, 1))
+                orientation_error_deg = np.degrees(orientation_error)
+                
+                self.get_logger().info(f"IK: pos_err={trans_error*1000:.1f}mm, "
+                                      f"orient_err={orientation_error_deg:.1f}°")
+                
+                if trans_error < 0.02 and orientation_error_deg < 15:
                     return sol.q
                 else:
-                    self.get_logger().warn(f"IK inaccurate: {trans_error*1000:.2f}mm")
+                    self.get_logger().warn("IK solution not accurate enough")
                     return None
             else:
                 self.get_logger().error("IK failed to converge")
@@ -88,7 +107,6 @@ class PrecisionChallenge(Node):
             return None
     
     def send_joint_command(self, joint_angles):
-        """Send joint command to robot"""
         msg = Int32MultiArray()
         msg.data = [
             utils.rad2steps(joint_angles[0]),
@@ -97,34 +115,48 @@ class PrecisionChallenge(Node):
             utils.rad2steps(joint_angles[3])
         ]
         self.joint_cmd_pub.publish(msg)
-        self.get_logger().info(f"Sent: {msg.data}")
+        
+        joint_degrees = [np.degrees(q) for q in joint_angles]
+        self.get_logger().info(f"Sent: {[f'{d:.1f}°' for d in joint_degrees]}")
     
-    def go_home(self):
-        """Move to home position"""
+    def go_home_callback(self, request, response):
         self.get_logger().info("→ Moving to HOME position")
         self.send_joint_command(self.home_joints)
+        
+        # Wait for movement to complete
         time.sleep(self.move_time)
-        self.get_logger().info("✓ HOME position reached")
+        
+        response.success = True
+        response.message = "Reached home position"
+        return response
     
-    def mark_target(self, target_x, target_y, target_z, trial_number):
-        """
-        Execute one trial: HOME → TARGET → MARK → HOME
-        """
+    def execute_trial_callback(self, request, response):
+        self.trial_count += 1
+        
+        # Get current target from parameters
+        target_x = self.get_parameter('target_x').value
+        target_y = self.get_parameter('target_y').value
+        target_z = self.get_parameter('target_z').value
+        
         self.get_logger().info(f"\n{'='*50}")
-        self.get_logger().info(f"TRIAL {trial_number}")
+        self.get_logger().info(f"TRIAL {self.trial_count}")
         self.get_logger().info(f"Target: X={target_x:.4f}, Y={target_y:.4f}, Z={target_z:.4f}")
         self.get_logger().info(f"{'='*50}")
         
-        # 1. Ensure we're at home
-        self.go_home()
+        # 1. Ensure at home
+        self.get_logger().info("→ Starting from HOME")
+        self.send_joint_command(self.home_joints)
+        time.sleep(self.move_time)
         
-        # 2. Compute IK for target
+        # 2. Compute IK
         self.get_logger().info("→ Computing IK...")
         joint_angles = self.compute_ik(target_x, target_y, target_z)
         
         if joint_angles is None:
+            response.success = False
+            response.message = f"Trial {self.trial_count} FAILED: Cannot reach target"
             self.get_logger().error("✗ FAILED: Cannot reach target")
-            return False
+            return response
         
         # 3. Move to target
         self.get_logger().info("→ Moving to TARGET")
@@ -137,69 +169,25 @@ class PrecisionChallenge(Node):
         self.get_logger().info("✓ Mark complete")
         
         # 5. Return home
-        self.go_home()
+        self.get_logger().info("→ Returning to HOME")
+        self.send_joint_command(self.home_joints)
+        time.sleep(self.move_time)
         
-        self.get_logger().info(f"✓ TRIAL {trial_number} COMPLETE\n")
-        return True
-    
-    def run_challenge(self, target_x, target_y, target_z, num_trials=5):
-        """
-        Run the full precision challenge: 5 trials to same target
-        """
-        self.get_logger().info(f"\n{'#'*50}")
-        self.get_logger().info(f"STARTING PRECISION CHALLENGE")
-        self.get_logger().info(f"Target: X={target_x:.4f}m, Y={target_y:.4f}m, Z={target_z:.4f}m")
-        self.get_logger().info(f"Trials: {num_trials}")
-        self.get_logger().info(f"{'#'*50}\n")
+        self.get_logger().info(f"✓ TRIAL {self.trial_count} COMPLETE\n")
         
-        # Initial home position
-        self.get_logger().info("Initial setup...")
-        self.go_home()
-        
-        input("\nPress ENTER to start challenge...")
-        
-        success_count = 0
-        
-        for trial in range(1, num_trials + 1):
-            input(f"\nTrial {trial}/{num_trials} - Add/remove payload if needed, then press ENTER...")
-            
-            if self.mark_target(target_x, target_y, target_z, trial):
-                success_count += 1
-            else:
-                self.get_logger().error(f"Trial {trial} FAILED!")
-        
-        # Final summary
-        self.get_logger().info(f"\n{'='*50}")
-        self.get_logger().info(f"CHALLENGE COMPLETE")
-        self.get_logger().info(f"Success: {success_count}/{num_trials} trials")
-        self.get_logger().info(f"{'='*50}")
-        self.get_logger().info("\nNow measure the 5 dots on paper:")
-        self.get_logger().info("1. Measure distance from each dot to target center")
-        self.get_logger().info("2. Calculate mean distance and standard deviation")
-        self.get_logger().info("3. Score = f(mean_distance, std_deviation)")
-        
-        return success_count == num_trials
+        response.success = True
+        response.message = f"Trial {self.trial_count} completed successfully"
+        return response
 
 
 def main(args=None):
     rclpy.init(args=args)
-    node = PrecisionChallenge()
+    node = PrecisionTestService()
     
-    # Wait for target coordinates
-    print("\n" + "="*60)
-    print("PRECISION CHALLENGE SETUP")
-    print("="*60)
-    print("Enter target coordinates (in robot base frame):")
-    
-    target_x = float(input("Target X (meters, forward): "))
-    target_y = float(input("Target Y (meters, left): "))
-    target_z = float(input("Target Z (meters, up): "))
-    
-    # Run the challenge
     try:
-        node.run_challenge(target_x, target_y, target_z, num_trials=5)
+        rclpy.spin(node)
     except KeyboardInterrupt:
-        print("\nChallenge interrupted!")
+        pass
     
     node.destroy_node()
     rclpy.shutdown()

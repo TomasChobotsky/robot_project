@@ -70,7 +70,7 @@ def generate_launch_description():
     
     approach_height_arg = DeclareLaunchArgument(
         'approach_height_offset',
-        default_value='0.02',
+        default_value='0.1',
         description='Height offset above ball for approach (meters)'
     )
     
@@ -128,13 +128,6 @@ def generate_launch_description():
         package=package_name,
         executable='robot_visualizer',
         name='robot_visualizer',
-        output='screen'
-    )
-    
-    node_visualizer_to_robot = Node(
-        package=package_name,
-        executable='visualizer_to_robot',
-        name='visualizer_to_robot',
         output='screen'
     )
     

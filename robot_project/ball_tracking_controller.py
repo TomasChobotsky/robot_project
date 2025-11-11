@@ -3,6 +3,7 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import PointStamped
 from std_msgs.msg import Int32MultiArray, String
+from std_srvs.srv import Trigger
 from adatools import config_generator as cg
 from adatools import utils as utils
 from spatialmath import SE3
@@ -18,28 +19,45 @@ class BallTrackingController(Node):
             PointStamped, 'orange_ball_position', self.orange_ball_callback, 10)
         
         self.joint_cmd_pub = self.create_publisher(Int32MultiArray, 'dxl_joint_cmd', 10)
-        
         self.target_pub = self.create_publisher(String, 'current_target', 10)
+        
+        # Services for manual control
+        self.move_initial_srv = self.create_service(Trigger, 'move_to_initial', self.move_to_initial_callback)
+        self.move_first_srv = self.create_service(Trigger, 'move_to_first_ball', self.move_to_first_callback)
+        self.move_second_srv = self.create_service(Trigger, 'move_to_second_ball', self.move_to_second_callback)
         
         self.my_conf_robot = cg.get_robot_config_1(
             link1=0.200, link1_offset=0.0,
             link2=0.330, link2_offset=0.0,
-            link3=0.340, link3_offset=0.0,
-            link4=0.100, link4_offset=0.0
+            link3=0.335, link3_offset=0.0,
+            link4=0.080, link4_offset=0.0
         )
         
         self.green_ball_pos = None
         self.orange_ball_pos = None
         
-        # Target selection: 'green', 'orange', 'alternate', or 'closest'
-        self.declare_parameter('target_mode', 'closest')
-        self.target_mode = self.get_parameter('target_mode').value
+        # Initial position (home/ready position)
+        self.declare_parameter('initial_q1', 0.0)
+        self.declare_parameter('initial_q2', 0.0)
+        self.declare_parameter('initial_q3', 0.0)
+        self.declare_parameter('initial_q4', 0.0)
+        
+        self.initial_joints = np.array([
+            self.get_parameter('initial_q1').value,
+            self.get_parameter('initial_q2').value,
+            self.get_parameter('initial_q3').value,
+            self.get_parameter('initial_q4').value
+        ])
+        
+        # Ball sequence: 'green_first' or 'orange_first'
+        self.declare_parameter('ball_sequence', 'green_first')
+        self.ball_sequence = self.get_parameter('ball_sequence').value
         
         # Camera to robot base transform
-        self.declare_parameter('camera_x_offset', 1.0)  # meters
-        self.declare_parameter('camera_y_offset', 0.0)  # meters
-        self.declare_parameter('camera_z_offset', 0.1)  # meters
-        self.declare_parameter('camera_rotation', 180.0)  # degrees around Z
+        self.declare_parameter('camera_x_offset', 1.0)
+        self.declare_parameter('camera_y_offset', 0.0)
+        self.declare_parameter('camera_z_offset', 0.1)
+        self.declare_parameter('camera_rotation', 180.0)
         
         self.cam_x = self.get_parameter('camera_x_offset').value
         self.cam_y = self.get_parameter('camera_y_offset').value
@@ -55,190 +73,123 @@ class BallTrackingController(Node):
         self.workspace_z_max = 0.5
         
         # Offset above ball for approach
-        self.declare_parameter('approach_height_offset', 0.05)  # 5cm above ball
+        self.declare_parameter('approach_height_offset', 0.1)
         self.approach_offset = self.get_parameter('approach_height_offset').value
         
-        # Control mode: 'manual' requires trigger, 'auto' moves continuously
-        self.declare_parameter('control_mode', 'manual')
-        self.control_mode = self.get_parameter('control_mode').value
+        # Store last valid joint configuration
+        self.last_q = self.initial_joints
         
-        # Timer for automatic tracking
-        if self.control_mode == 'auto':
-            self.create_timer(1.0, self.auto_track_callback)
-        
-        self.last_target = None
-        
-        self.get_logger().info(f"Ball Tracking Controller Started")
-        self.get_logger().info(f"Target mode: {self.target_mode}")
-        self.get_logger().info(f"Control mode: {self.control_mode}")
+        self.get_logger().info(f"Ball Tracking Controller Started (Sequential Manual Mode)")
+        self.get_logger().info(f"Ball sequence: {self.ball_sequence}")
+        self.get_logger().info(f"Initial joints: {self.initial_joints}")
         self.get_logger().info(f"Camera offset: x={self.cam_x}, y={self.cam_y}, z={self.cam_z}")
     
     def green_ball_callback(self, msg):
-        """Store or clear green ball position"""
         if msg.point.x == 0.0 and msg.point.y == 0.0 and msg.point.z == 0.0:
             if self.green_ball_pos is not None:
                 self.get_logger().info("Green ball lost")
             self.green_ball_pos = None
         else:
             self.green_ball_pos = np.array([msg.point.x, msg.point.y, msg.point.z])
-            self.get_logger().debug(f"Green ball updated: {self.green_ball_pos}")
+            self.get_logger().debug(f"Green ball: {self.green_ball_pos}")
 
     def orange_ball_callback(self, msg):
-        """Store or clear orange ball position"""
         if msg.point.x == 0.0 and msg.point.y == 0.0 and msg.point.z == 0.0:
             if self.orange_ball_pos is not None:
                 self.get_logger().info("Orange ball lost")
             self.orange_ball_pos = None
         else:
             self.orange_ball_pos = np.array([msg.point.x, msg.point.y, msg.point.z])
-            self.get_logger().debug(f"Orange ball updated: {self.orange_ball_pos}")
+            self.get_logger().debug(f"Orange ball: {self.orange_ball_pos}")
     
     def camera_to_robot_frame(self, camera_pos):
-        """
-        Transform position from camera frame to robot base frame
-        Camera frame: X right, Y down, Z forward
-        Robot frame: X forward, Y left, Z up
-        
-        Applies camera position offset and rotation around vertical axis
-        """
-        
-        # Camera coordinates
         x_cam, y_cam, z_cam = camera_pos
-        
-        # Convert camera rotation from degrees to radians
         theta = np.radians(self.cam_rot)
         
-        x_std = z_cam      # Camera forward (Z) = standard forward (X)
-        y_std = -x_cam     # Camera right (X) = standard left (-Y)
-        z_std = -y_cam     # Camera down (Y) = standard up (-Z)
+        # Camera to standard frame conversion
+        x_std = z_cam
+        y_std = -x_cam
+        z_std = -y_cam
         
-        # Rotation matrix around Z-axis:
-        # [cos(θ)  -sin(θ)   0]
-        # [sin(θ)   cos(θ)   0]
-        # [  0        0      1]
+        # Rotation around Z-axis
         x_rotated = x_std * np.cos(theta) - y_std * np.sin(theta)
         y_rotated = x_std * np.sin(theta) + y_std * np.cos(theta)
         z_rotated = z_std
         
-        # Step 3: Add camera mounting position offset
+        # Add offset
         x_robot = self.cam_x + x_rotated
         y_robot = self.cam_y + y_rotated
         z_robot = self.cam_z + z_rotated
 
-        self.get_logger().info(f"Camera pos: [{x_cam:.3f}, {y_cam:.3f}, {z_cam:.3f}]")
-        self.get_logger().info(f"Robot pos: [{x_robot:.3f}, {y_robot:.3f}, {z_robot:.3f}]")
-    
+        self.get_logger().info(f"Camera: [{x_cam:.3f}, {y_cam:.3f}, {z_cam:.3f}] → "
+                              f"Robot: [{x_robot:.3f}, {y_robot:.3f}, {z_robot:.3f}]")
         return np.array([x_robot, y_robot, z_robot])
     
     def is_in_workspace(self, position):
-        """Check if position is within safe workspace"""
         x, y, z = position
-        
-        if not (self.workspace_x_min <= x <= self.workspace_x_max):
-            return False
-        if not (self.workspace_y_min <= y <= self.workspace_y_max):
-            return False
-        if not (self.workspace_z_min <= z <= self.workspace_z_max):
-            return False
-        
-        return True
+        return (self.workspace_x_min <= x <= self.workspace_x_max and
+                self.workspace_y_min <= y <= self.workspace_y_max and
+                self.workspace_z_min <= z <= self.workspace_z_max)
     
     def compute_ik(self, target_position):
-        """
-        Compute inverse kinematics for target position
-        Returns: joint angles in radians or None if failed
-        """
         x, y, z = target_position
-        
-        # Add approach offset (move above the ball)
         z_approach = z + self.approach_offset
         
-        # Check workspace limits
         if not self.is_in_workspace([x, y, z_approach]):
-            self.get_logger().warn(f"Target position out of workspace: {target_position}")
+            self.get_logger().warn(f"Target out of workspace: {target_position}")
             return None
         
-        # Create target pose
-        # End effector pointing down
-        Tgoal = SE3(x, y, z_approach) * SE3.Rx(180, 'deg')
+        # CRITICAL: End effector pointing DOWN
+        # Use SE3.Ry(180) for proper downward orientation
+        Tgoal = SE3(x, y, z_approach) * SE3.Ry(180, 'deg')
         
-        # Compute inverse kinematics
-        try:
-            sol = self.my_conf_robot.ikine_LM(
-                Tgoal, 
-                q0=self.my_conf_robot.qr,  # Start from ready position
-                mask=[1, 1, 1, 0.2, 0.2, 0.3]  # Prioritize position over orientation
-            )
-            
-            if sol.success:
-                # Verify solution with forward kinematics
-                T_actual = self.my_conf_robot.fkine(sol.q)
-                trans_error = np.linalg.norm(Tgoal.t - T_actual.t)
+        initial_guesses = [
+            self.last_q,
+            self.initial_joints,
+            self.my_conf_robot.qr,
+            np.array([0, np.pi/4, np.pi/4, 0]),
+        ]
+        
+        for i, q0 in enumerate(initial_guesses):
+            try:
+                sol = self.my_conf_robot.ikine_LM(
+                    Tgoal, 
+                    q0=q0,
+                    mask=[1, 1, 1, 1, 1, 1],
+                    ilimit=1000,
+                    slimit=200,
+                    tol=1e-6,
+                )
                 
-                if trans_error < 0.02:  # 2cm tolerance
-                    self.get_logger().info(f"IK successful! Position error: {trans_error*1000:.1f}mm")
-                    return sol.q
-                else:
-                    self.get_logger().warn(f"IK solution inaccurate: error={trans_error*1000:.1f}mm")
-                    return None
-            else:
-                self.get_logger().warn("IK failed to converge")
-                return None
-                
-        except Exception as e:
-            self.get_logger().error(f"IK computation error: {e}")
-            return None
+                if sol.success:
+                    T_actual = self.my_conf_robot.fkine(sol.q)
+                    trans_error = np.linalg.norm(Tgoal.t - T_actual.t)
+                    
+                    # Check end effector orientation (should point down = -Z direction)
+                    z_desired = Tgoal.R[:3, 2]  # Z-axis of desired frame
+                    z_actual = T_actual.R[:3, 2]  # Z-axis of actual frame
+                    
+                    # For pointing down, Z-axis should be close to [0, 0, -1]
+                    orientation_error = np.arccos(np.clip(np.dot(z_desired, z_actual), -1, 1))
+                    orientation_error_deg = np.degrees(orientation_error)
+                    
+                    self.get_logger().info(f"IK attempt {i+1}: pos_err={trans_error*1000:.1f}mm, "
+                                          f"orient_err={orientation_error_deg:.1f}°")
+                    self.get_logger().info(f"End effector Z-axis: {z_actual}")
+                    
+                    if trans_error < 0.02 and orientation_error_deg < 15:
+                        self.get_logger().info(f"✓ IK successful")
+                        self.last_q = sol.q
+                        return sol.q
+                        
+            except Exception as e:
+                self.get_logger().debug(f"IK attempt {i+1} failed: {e}")
+                continue
+        
+        self.get_logger().error("All IK attempts failed")
+        return None
     
-    def select_target(self):
-        """Select which ball to target based on mode"""
-        if self.target_mode == 'green':
-            if self.green_ball_pos is not None:
-                return self.green_ball_pos, 'green'
-        
-        elif self.target_mode == 'orange':
-            if self.orange_ball_pos is not None:
-                return self.orange_ball_pos, 'orange'
-        
-        elif self.target_mode == 'closest':
-            # Target the closest ball
-            balls = []
-            if self.green_ball_pos is not None:
-                balls.append((self.green_ball_pos, 'green'))
-            if self.orange_ball_pos is not None:
-                balls.append((self.orange_ball_pos, 'orange'))
-            
-            if balls:
-                # Find closest based on distance from robot base (in robot frame)
-                closest = min(balls, key=lambda b: np.linalg.norm(self.camera_to_robot_frame(b[0])))
-                return closest[0], closest[1]  # Return camera frame pos and color
-        
-        elif self.target_mode == 'alternate':
-            # Alternate between balls
-            if self.last_target == 'green' and self.orange_ball_pos is not None:
-                return self.orange_ball_pos, 'orange'
-            elif self.green_ball_pos is not None:
-                return self.green_ball_pos, 'green'
-            elif self.orange_ball_pos is not None:
-                return self.orange_ball_pos, 'orange'
-        
-        return None, None
-    
-    def move_to_ball(self, ball_position, color_name):
-        """Execute movement to ball position"""
-        self.get_logger().info(f"Moving to {color_name} ball...")
-        
-        # Transform to robot frame
-        robot_pos = self.camera_to_robot_frame(ball_position)
-        self.get_logger().info(f"Robot frame position: x={robot_pos[0]:.3f}, y={robot_pos[1]:.3f}, z={robot_pos[2]:.3f}")
-        
-        # Compute IK
-        joint_angles = self.compute_ik(robot_pos)
-        
-        if joint_angles is None:
-            self.get_logger().error("Failed to compute IK")
-            return False
-        
-        # Convert to motor steps and publish
+    def send_joint_command(self, joint_angles):
         msg = Int32MultiArray()
         msg.data = [
             utils.rad2steps(joint_angles[0]),
@@ -246,37 +197,76 @@ class BallTrackingController(Node):
             utils.rad2steps(joint_angles[2]),
             utils.rad2steps(joint_angles[3])
         ]
-        
         self.joint_cmd_pub.publish(msg)
-        self.get_logger().info(f"Published joint command: {msg.data}")
         
-        # Publish target color
+        joint_degrees = [np.degrees(q) for q in joint_angles]
+        self.get_logger().info(f"Joint cmd (deg): {[f'{d:.1f}' for d in joint_degrees]}")
+        self.get_logger().info(f"Joint cmd (steps): {msg.data}")
+    
+    def move_to_ball(self, ball_position, color_name):
+        self.get_logger().info(f"→ Moving to {color_name} ball...")
+        
+        robot_pos = self.camera_to_robot_frame(ball_position)
+        joint_angles = self.compute_ik(robot_pos)
+        
+        if joint_angles is None:
+            return False
+        
+        self.send_joint_command(joint_angles)
+        
         target_msg = String()
         target_msg.data = color_name
         self.target_pub.publish(target_msg)
         
-        self.last_target = color_name
         return True
     
-    def auto_track_callback(self):
-        """Automatically track selected ball"""
-        ball_pos, color = self.select_target()
-        
-        if ball_pos is not None:
-            self.move_to_ball(ball_pos, color)
-        else:
-            self.get_logger().debug("No target ball detected")
+    def move_to_initial_callback(self, request, response):
+        self.get_logger().info("→ Moving to INITIAL position")
+        self.send_joint_command(self.initial_joints)
+        self.last_q = self.initial_joints
+        response.success = True
+        response.message = "Moved to initial position"
+        return response
     
-    def trigger_movement(self):
-        """Manually trigger movement (call from external command)"""
-        ball_pos, color = self.select_target()
+    def move_to_first_callback(self, request, response):
+        if self.ball_sequence == 'green_first':
+            if self.green_ball_pos is None:
+                response.success = False
+                response.message = "Green ball not detected!"
+                self.get_logger().error("Green ball not detected")
+                return response
+            success = self.move_to_ball(self.green_ball_pos, 'green')
+        else:  # orange_first
+            if self.orange_ball_pos is None:
+                response.success = False
+                response.message = "Orange ball not detected!"
+                self.get_logger().error("Orange ball not detected")
+                return response
+            success = self.move_to_ball(self.orange_ball_pos, 'orange')
         
-        if ball_pos is not None:
-            self.move_to_ball(ball_pos, color)
-            return True
-        else:
-            self.get_logger().warn("No target ball available")
-            return False
+        response.success = success
+        response.message = "Moving to first ball" if success else "Failed to compute IK"
+        return response
+    
+    def move_to_second_callback(self, request, response):
+        if self.ball_sequence == 'green_first':
+            if self.orange_ball_pos is None:
+                response.success = False
+                response.message = "Orange ball not detected!"
+                self.get_logger().error("Orange ball not detected")
+                return response
+            success = self.move_to_ball(self.orange_ball_pos, 'orange')
+        else:  # orange_first
+            if self.green_ball_pos is None:
+                response.success = False
+                response.message = "Green ball not detected!"
+                self.get_logger().error("Green ball not detected")
+                return response
+            success = self.move_to_ball(self.green_ball_pos, 'green')
+        
+        response.success = success
+        response.message = "Moving to second ball" if success else "Failed to compute IK"
+        return response
 
 
 def main(args=None):

@@ -17,24 +17,24 @@ class BallDetector(Node):
         # Launch parameters
         self.declare_parameter('enable_visualization', True)
         self.declare_parameter('processing_rate', 5.0)
-        self.declare_parameter('min_area', 800)
+        self.declare_parameter('min_area', 600)
         self.declare_parameter('morph_kernel', 5)
         self.declare_parameter('display_scale', 1.0)
 
         # HSV thresholds (adjustable)
         # Green
-        self.declare_parameter('green_h_low', 40)
-        self.declare_parameter('green_s_low', 60)
-        self.declare_parameter('green_v_low', 40)
+        self.declare_parameter('green_h_low', 65)
+        self.declare_parameter('green_s_low', 120)
+        self.declare_parameter('green_v_low', 80)
         self.declare_parameter('green_h_high', 90)
         self.declare_parameter('green_s_high', 255)
         self.declare_parameter('green_v_high', 255)
 
         # Orange
-        self.declare_parameter('orange_h_low', 10)
-        self.declare_parameter('orange_s_low', 150)
-        self.declare_parameter('orange_v_low', 130)
-        self.declare_parameter('orange_h_high', 22)
+        self.declare_parameter('orange_h_low', 5)
+        self.declare_parameter('orange_s_low', 140)
+        self.declare_parameter('orange_v_low', 140)
+        self.declare_parameter('orange_h_high', 25)
         self.declare_parameter('orange_s_high', 255)
         self.declare_parameter('orange_v_high', 255)
 
@@ -115,14 +115,23 @@ class BallDetector(Node):
     def _find_centroid(self, mask):
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not contours:
-            return None
+            return None, None
         largest = max(contours, key=cv2.contourArea)
         if cv2.contourArea(largest) < self.min_area:
-            return None
+            return None, None
+        perimeter = cv2.arcLength(largest, True)
+        if perimeter == 0:
+            return None, None
+        circularity = 4 * math.pi * (cv2.contourArea(largest) / (perimeter * perimeter))
+        if circularity < 0.6:  # 1.0 = perfect circle
+            return None, None
         M = cv2.moments(largest)
         if M['m00'] == 0:
-            return None
-        return int(M['m10'] / M['m00']), int(M['m01'] / M['m00'])
+            return None, None
+        cx = int(M['m10'] / M['m00'])
+        cy = int(M['m01'] / M['m00'])
+        return (cx, cy), largest
+
 
     def _depth_at(self, cx, cy):
         if self.latest_depth is None:
@@ -183,12 +192,12 @@ class BallDetector(Node):
 
         # Detect green
         mask_g = self._threshold_hsv(frame, g_low, g_high)
-        c_g = self._find_centroid(mask_g)
+        c_g, contour_g = self._find_centroid(mask_g)
         found_g = False
 
         if c_g:
             d = self._depth_at(*c_g)
-            if d:
+            if d and 0.1 < d < 5.0:
                 p = self._deproject(c_g, d)
                 if p is not None:
                     self._publish_point(self.green_pub, p)
@@ -196,12 +205,15 @@ class BallDetector(Node):
                     cv2.circle(frame, c_g, 6, (0, 255, 0), -1)
                     cv2.putText(frame, f"G {d:.2f}m", (c_g[0]+8, c_g[1]-8),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 1)
+                    # Draw enclosing circle
+                    (x, y), radius = cv2.minEnclosingCircle(contour_g)
+                    cv2.circle(frame, (int(x), int(y)), int(radius), (0, 255, 0), 2)
         if not found_g:
             self._publish_lost(self.green_pub)
 
         # Detect orange
         mask_o = self._threshold_hsv(frame, o_low, o_high)
-        c_o = self._find_centroid(mask_o)
+        c_o, contour_o = self._find_centroid(mask_o)
         found_o = False
 
         if c_o:
@@ -214,6 +226,9 @@ class BallDetector(Node):
                     cv2.circle(frame, c_o, 6, (0, 165, 255), -1)
                     cv2.putText(frame, f"O {d:.2f}m", (c_o[0]+8, c_o[1]-8),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,165,255), 1)
+                    # Draw enclosing circle
+                    (x, y), radius = cv2.minEnclosingCircle(contour_o)
+                    cv2.circle(frame, (int(x), int(y)), int(radius), (0, 165, 255), 2)
         if not found_o:
             self._publish_lost(self.orange_pub)
 
